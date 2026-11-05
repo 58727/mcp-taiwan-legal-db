@@ -31,6 +31,7 @@ dependencies = [
     "lxml>=5.0.0",
     # 訴願決定書、公平會處分書只有 PDF 全文
     "pypdf>=4.0.0",
+    "pymupdf>=1.23.0",
     # Use OS-native trust stores (Keychain / CryptoAPI / system ca-certs)
     # instead of the certifi bundle. Required because TWCA Global Root CA
     # in Mozilla's bundle lacks the Subject Key Identifier extension,

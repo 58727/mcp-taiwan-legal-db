@@ -41,15 +41,33 @@ def clean_pdf_text(raw: str) -> str:
     return re.sub(rf"(?<=[{CJK}])[ \t]+|[ \t]+(?=[{CJK}])", "", normalize_han("\n".join(paras)))
 
 
-def pdf_to_text(blob: bytes) -> str:
-    """擷取 PDF 文字；不是 PDF、壞檔、或字型無法解碼（亂碼）時回空字串，由呼叫端改給 PDF 連結。"""
+def extract_raw_pdf_text(blob: bytes) -> str:
+    """提取 PDF 原始各頁文字（優先使用 PyMuPDF fitz，備援 pypdf），保留原行結構供裁判書解析器使用。"""
     if blob[:4] != b"%PDF":
         return ""
-    from pypdf import PdfReader
+    try:
+        try:
+            import pymupdf
+        except ImportError:
+            import fitz as pymupdf  # type: ignore[no-redef]
+        with pymupdf.open(stream=blob, filetype="pdf") as doc:
+            text = "\n".join(page.get_text("text") or "" for page in doc)
+        if text.strip() and not is_garbled(text):
+            return normalize_han(text)
+    except Exception as e:
+        logger.debug("PyMuPDF 文字擷取失敗，改試 pypdf：%s", e)
 
     try:
-        text = clean_pdf_text("\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(blob)).pages))
-    except Exception as e:  # pypdf 對損壞檔案會拋各種例外
+        from pypdf import PdfReader
+        text = "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(blob)).pages)
+        if text.strip() and not is_garbled(text):
+            return normalize_han(text)
+    except Exception as e:
         logger.warning("PDF 文字擷取失敗：%s", e)
-        return ""
-    return "" if is_garbled(text) else text
+    return ""
+
+
+def pdf_to_text(blob: bytes) -> str:
+    """擷取 PDF 文字；不是 PDF、壞檔、或字型無法解碼（亂碼）時回空字串，由呼叫端改給 PDF 連結。"""
+    raw = extract_raw_pdf_text(blob)
+    return clean_pdf_text(raw) if raw else ""
