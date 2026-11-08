@@ -28,6 +28,39 @@ def _looks_like_article(text: str) -> bool:
     return True
 
 
+def _extract_article_content(container) -> str:
+    """從條文容器擷取文字，保留「項」（\n\n）與「款／目」（\n）結構。
+
+    全國法規資料庫（LawAll.aspx / LawSingle.aspx）結構：
+    - div.line-0000（或含 show-number）：一項（Paragraph）
+    - div.line-0004 / line-0006 / line-0008 等：該項下的款、目（Item）
+    若容器內無 div.line-*（如舊版表格或純文字），則退回 get_text(strip=True)。
+    """
+    line_divs = [
+        d for d in container.find_all("div")
+        if any(c.startswith("line-") for c in (d.get("class") or []))
+    ]
+    if not line_divs:
+        return container.get_text(strip=True)
+
+    paragraphs: list[str] = []
+    curr_lines: list[str] = []
+    for d in line_divs:
+        classes = d.get("class") or []
+        text = re.sub(r"\s+", " ", d.get_text(strip=True)).strip()
+        if not text:
+            continue
+        if "line-0000" in classes:
+            if curr_lines:
+                paragraphs.append("\n".join(curr_lines))
+                curr_lines = []
+        curr_lines.append(text)
+    if curr_lines:
+        paragraphs.append("\n".join(curr_lines))
+
+    return "\n\n".join(paragraphs)
+
+
 def parse_single_article(html: str) -> dict:
     """解析 LawSingle.aspx 頁面，擷取單一條文"""
     soup = BeautifulSoup(html, "lxml")
@@ -57,7 +90,7 @@ def parse_single_article(html: str) -> dict:
         soup.select_one("pre")
     )
     if content_el:
-        text = content_el.get_text(strip=True)
+        text = _extract_article_content(content_el)
         if _looks_like_article(text):
             result["article_content"] = text
     else:
@@ -65,7 +98,7 @@ def parse_single_article(html: str) -> dict:
         paragraphs = soup.find_all(["p", "div", "td"])
         if paragraphs:
             longest = max(paragraphs, key=lambda p: len(p.get_text()))
-            text = longest.get_text(strip=True)
+            text = _extract_article_content(longest)
             if len(text) > 20 and _looks_like_article(text):
                 result["article_content"] = text
 
@@ -129,7 +162,7 @@ def parse_law_all(html: str) -> dict:
                 col_data = el.select_one(".col-data")
                 if col_no and col_data:
                     number_text = col_no.get_text(strip=True)
-                    content_text = col_data.get_text(strip=True)
+                    content_text = _extract_article_content(col_data)
                     num_match = re.search(r"第\s*(\S+?)\s*條", number_text)
                     if num_match and content_text:
                         article_num = num_match.group(1)
@@ -153,7 +186,7 @@ def parse_law_all(html: str) -> dict:
             col_data = row.select_one(".col-data")
             if col_no and col_data:
                 number_text = col_no.get_text(strip=True)
-                content_text = col_data.get_text(strip=True)
+                content_text = _extract_article_content(col_data)
                 num_match = re.search(r"第\s*(\S+?)\s*條", number_text)
                 if num_match and content_text:
                     result["articles"].append({
@@ -167,7 +200,7 @@ def parse_law_all(html: str) -> dict:
             cells = row.select("td")
             if len(cells) >= 2:
                 number_text = cells[0].get_text(strip=True)
-                content_text = cells[1].get_text(strip=True)
+                content_text = _extract_article_content(cells[1])
                 num_match = re.search(r"第\s*(\S+?)\s*條", number_text)
                 if num_match and content_text:
                     result["articles"].append({

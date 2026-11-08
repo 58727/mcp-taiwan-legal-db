@@ -177,7 +177,7 @@ class CacheDB:
     # --- 法規快取 ---
 
     async def get_regulation(self, pcode: str, article_no: str = "") -> dict | None:
-        """查詢法規快取"""
+        """查詢法規快取（_fmt=2 確保已保留項款換行結構，舊版扁平快取自動失效）"""
         self.db.row_factory = aiosqlite.Row
         cursor = await self.db.execute(
             "SELECT data_json, expires_at FROM regulation_cache WHERE pcode = ? AND article_no = ?",
@@ -185,15 +185,20 @@ class CacheDB:
         )
         row = await cursor.fetchone()
         if row and not _is_expired(row["expires_at"]):
-            return json.loads(row["data_json"])
+            data = json.loads(row["data_json"])
+            if article_no != "__verlist__" and data.get("_fmt") != 2:
+                return None
+            data.pop("_fmt", None)
+            return data
         return None
 
     async def set_regulation(self, pcode: str, data: dict, article_no: str = ""):
         """寫入法規快取"""
         exp = _expires_at(CACHE_REGULATION_TTL)
+        payload = {**data, "_fmt": 2}
         await self.db.execute(
             "INSERT OR REPLACE INTO regulation_cache (pcode, article_no, data_json, expires_at) VALUES (?, ?, ?, ?)",
-            (pcode, article_no, json.dumps(data, ensure_ascii=False), exp),
+            (pcode, article_no, json.dumps(payload, ensure_ascii=False), exp),
         )
         await self.db.commit()
 

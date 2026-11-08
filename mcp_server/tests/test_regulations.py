@@ -199,3 +199,38 @@ class TestParseLawAll:
         assert len(result["articles"]) == 2
         assert result["articles"][0]["number"] == "1"
         assert "勞動條件" in result["articles"][0]["content"]
+
+
+    def test_parse_preserves_paragraph_and_item_breaks(self):
+        """確認 div.line-0000（項）以 \n\n 分隔、div.line-0004/0006（款）以 \n 分隔"""
+        html = """
+        <html><head><title>刑事訴訟法-全國法規資料庫</title></head>
+        <body>
+        <h2>刑事訴訟法</h2>
+        <div class="law-reg-content">
+          <div class="row">
+            <div class="col-no">第 95 條</div>
+            <div class="col-data">
+              <div class="law-article">
+                <div class="line-0000 show-number">訊問被告應先告知下列事項：</div>
+                <div class="line-0004">一、犯罪嫌疑及所犯所有罪名。</div>
+                <div class="line-0004">二、得保持緘默。</div>
+                <div class="line-0000 show-number">無辯護人之被告表示已選任辯護人時，應即停止訊問。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </body></html>
+        """
+        result = parse_law_all(html)
+        assert len(result["articles"]) == 1
+        expected = (
+            "訊問被告應先告知下列事項：\n"
+            "一、犯罪嫌疑及所犯所有罪名。\n"
+            "二、得保持緘默。\n\n"
+            "無辯護人之被告表示已選任辯護人時，應即停止訊問。"
+        )
+        assert result["articles"][0]["content"] == expected
+
+        single = parse_single_article(html)
+        assert single["article_content"] == expected
